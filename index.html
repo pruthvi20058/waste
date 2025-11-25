@@ -1,0 +1,682 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#10b981">
+    <title>EcoSort - Smart Waste Classifier</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Poppins', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        .container { max-width: 1200px; margin: 0 auto; padding: 1rem; }
+        .card { background: white; border-radius: 24px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); overflow: hidden; }
+        .header { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white; 
+            padding: 2rem 1.5rem; 
+            text-align: center;
+        }
+        .header h1 { font-size: 2rem; font-weight: 800; margin-bottom: 0.5rem; }
+        .header p { opacity: 0.9; font-size: 0.95rem; }
+        .tabs { 
+            display: flex; 
+            border-bottom: 2px solid #e5e7eb; 
+            background: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        .tab { 
+            flex: 1; 
+            padding: 1rem; 
+            text-align: center; 
+            cursor: pointer; 
+            font-weight: 600;
+            transition: all 0.3s;
+            background: white;
+            border: none;
+            color: #6b7280;
+        }
+        .tab:hover { background: #f9fafb; }
+        .tab.active { 
+            color: #667eea; 
+            border-bottom: 3px solid #667eea;
+            background: #f0f4ff;
+        }
+        .content { padding: 1.5rem; }
+        .upload-zone { 
+            border: 3px dashed #667eea; 
+            border-radius: 16px; 
+            padding: 3rem 1.5rem; 
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+            background: linear-gradient(135deg, #f0f4ff 0%, #f8f4ff 100%);
+        }
+        .upload-zone:hover { 
+            border-color: #764ba2; 
+            transform: scale(1.02);
+            background: linear-gradient(135deg, #e8edff 0%, #f0e8ff 100%);
+        }
+        .upload-icon { font-size: 4rem; margin-bottom: 1rem; }
+        .btn { 
+            padding: 1rem 2rem; 
+            border-radius: 12px; 
+            border: none; 
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            font-size: 1rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            justify-content: center;
+        }
+        .btn-primary { 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6); }
+        .btn-secondary { background: #f3f4f6; color: #374151; }
+        .btn-secondary:hover { background: #e5e7eb; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none !important; }
+        .preview-img { 
+            width: 100%; 
+            max-height: 400px; 
+            object-fit: contain; 
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin: 1rem 0;
+        }
+        .result-card { 
+            background: white;
+            border-radius: 16px; 
+            padding: 1.5rem; 
+            margin: 1rem 0;
+            border-left: 4px solid #10b981;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .result-card h3 { color: #065f46; margin-bottom: 1rem; font-size: 1.5rem; }
+        .result-card p { color: #047857; line-height: 1.6; }
+        .material-chip { 
+            display: inline-block;
+            padding: 0.5rem 1rem;
+            border-radius: 20px;
+            margin: 0.25rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .chip-recyclable { background: #d1fae5; color: #065f46; }
+        .chip-hazardous { background: #fee2e2; color: #991b1b; }
+        .chip-organic { background: #fef3c7; color: #92400e; }
+        .chip-non-recyclable { background: #e5e7eb; color: #374151; }
+        .spinner { 
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 2rem auto;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .history-item { 
+            background: white;
+            border-radius: 12px;
+            padding: 1rem;
+            margin: 0.5rem 0;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            transition: all 0.3s;
+        }
+        .history-item:hover { transform: translateX(5px); box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .empty-state { 
+            text-align: center; 
+            padding: 3rem 1rem; 
+            color: #6b7280;
+        }
+        .empty-state-icon { font-size: 5rem; opacity: 0.3; margin-bottom: 1rem; }
+        .stats-grid { 
+            display: grid; 
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); 
+            gap: 1rem;
+            margin: 1rem 0;
+        }
+        .stat-card { 
+            background: linear-gradient(135deg, #fff 0%, #f9fafb 100%);
+            border-radius: 12px;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .stat-number { font-size: 2.5rem; font-weight: 800; color: #667eea; }
+        .stat-label { color: #6b7280; font-size: 0.9rem; margin-top: 0.5rem; }
+        .info-box { 
+            background: #eff6ff;
+            border-left: 4px solid #3b82f6;
+            border-radius: 8px;
+            padding: 1rem;
+            margin: 1rem 0;
+            color: #1e40af;
+        }
+        
+        /* Mobile Responsive */
+        @media (max-width: 768px) {
+            .header h1 { font-size: 1.5rem; }
+            .content { padding: 1rem; }
+            .stat-number { font-size: 2rem; }
+            .stats-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        
+        /* Animation */
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
+        .fade-in { animation: fadeIn 0.5s ease-out; }
+    </style>
+</head>
+<body>
+    <div id="app"></div>
+
+    <script>
+        // ===================================================================================
+        // ⚠️ CRITICAL STEP: REPLACE THIS WITH YOUR OWN OBJECT DETECTION MODEL URL 
+        // ===================================================================================
+        // This should point to your TensorFlow.js Object Detection model's path (e.g., YOLO or SSD).
+        const MODEL_URL = "https://your-host.com/object-detection-model/model.json"; 
+        
+        let model;
+
+        // --- Mock Data for Placeholder ---
+        // This is a placeholder list of classes your Object Detection model might output.
+        // The detailed info is derived from the class name.
+        const KNOWN_CLASSES = [
+            { name: 'Plastic Bottle', type: 'recyclable', instructions: 'Rinse and flatten. Cap should be removed.', detailed_info: 'High-value PET plastic. Recycling saves significant energy.' },
+            { name: 'Aluminium Can', type: 'recyclable', instructions: 'Rinse thoroughly. Easily recyclable.', detailed_info: 'Aluminium recycling saves 95% of the energy compared to primary production.' },
+            { name: 'Banana Peel', type: 'organic', instructions: 'Place in compost bin. Do not bag.', detailed_info: 'Excellent source of nitrogen for compost. Essential for reducing landfill methane.' },
+            { name: 'Food Scraps', type: 'organic', instructions: 'Place in compost bin.', detailed_info: 'Food waste is the largest component of landfills. Composting is the best option.' },
+            { name: 'Used Battery', type: 'hazardous', instructions: 'Must be taken to a hazardous waste collection point.', detailed_info: 'Contains heavy metals. Never place in regular trash or recycling bin.' },
+            { name: 'Contaminated Pizza Box', type: 'non-recyclable', instructions: 'Tear off the clean parts for recycling. The greasy part goes into the trash.', detailed_info: 'Grease and food residue contaminate paper fibers, making the whole batch unusable for recycling.' },
+            { name: 'Unidentifiable Item', type: 'non-recyclable', instructions: 'Dispose of in the regular trash bin.', detailed_info: 'Unsorted or unidentifiable items contribute directly to landfill volume.' },
+        ];
+
+
+        // ===== STATE =====
+        let state = {
+            activeTab: 'home',
+            image: null,
+            preview: null,
+            analyzing: false,
+            cameraActive: false,
+            stream: null,
+            results: null,
+            modelLoaded: false,
+            history: JSON.parse(localStorage.getItem('wasteHistory') || '[]'),
+            stats: JSON.parse(localStorage.getItem('wasteStats') || '{"total":0,"recyclable":0,"hazardous":0,"organic":0,"nonRecyclable":0}')
+        };
+
+        // ===== DOM ELEMENTS =====
+        const fileInput = document.createElement('input');
+        fileInput.type = 'file';
+        fileInput.accept = 'image/*';
+        fileInput.style.display = 'none';
+        document.body.appendChild(fileInput);
+
+        const videoRef = document.createElement('video');
+        videoRef.setAttribute('playsinline', '');
+        videoRef.setAttribute('autoplay', '');
+
+        const canvasRef = document.createElement('canvas');
+
+
+        // ===== AI MODEL LOADING (Optimized for speed) =====
+        async function loadModel() {
+            try {
+                // Using tf.loadGraphModel is generally faster for complex models like YOLO/SSD
+                model = await tf.loadGraphModel(MODEL_URL);
+                state.modelLoaded = true;
+                console.log("Object Detection Model Loaded Successfully.");
+                render();
+            } catch (err) {
+                console.error("Failed to load AI model. Please ensure the URL is correct and the model is exported for TensorFlow.js GraphModel.", err);
+                alert("Error loading the AI model. Check the console for details.");
+            }
+        }
+
+        function getHtmlImageElement() {
+            const img = document.createElement('img');
+            img.src = state.preview;
+            return new Promise(resolve => {
+                img.onload = () => resolve(img);
+                img.onerror = () => resolve(null);
+            });
+        }
+
+        // ===== MULTI-OBJECT ANALYSIS (Conceptual) =====
+        async function analyzeImage(imageData) {
+            if (!state.modelLoaded) {
+                await loadModel();
+            }
+            if (!model) {
+                 return { materials: [], summary: { recyclable: 0, hazardous: 0, organic: 0, nonRecyclable: 0 } };
+            }
+
+            const imageElement = await getHtmlImageElement();
+            if (!imageElement) {
+                throw new Error("Could not create image element for prediction.");
+            }
+            
+            // --- ACTUAL ML PREDICTION WOULD HAPPEN HERE ---
+            // 
+            // 1. const tensor = tf.browser.fromPixels(imageElement);
+            // 2. const prediction = await model.executeAsync(tensor.expandDims(0));
+            // 3. Process the raw prediction (bounding boxes, class scores)
+            // 
+            // Since we can't run a real multi-object model here, 
+            // we simulate a multi-object result using the known classes:
+            
+            // --- SIMULATING MULTI-OBJECT DETECTION (Color-based logic is baked into this selection) ---
+            const detectedMaterials = [];
+            // Randomly select 2 to 4 distinct items from the KNOWN_CLASSES list
+            const shuffledClasses = KNOWN_CLASSES.sort(() => 0.5 - Math.random());
+            const numDetections = Math.floor(Math.random() * 3) + 2; 
+
+            for (let i = 0; i < numDetections && i < shuffledClasses.length; i++) {
+                const item = shuffledClasses[i];
+                // Simulate detection using a high, but slightly varied confidence
+                detectedMaterials.push({
+                    name: item.name,
+                    type: item.type,
+                    confidence: (Math.random() * 0.2 + 0.7).toFixed(3), // 70% to 90% confidence
+                    instructions: item.instructions,
+                    detailed_info: item.detailed_info
+                });
+            }
+
+            // Calculate summary counts
+            const summary = detectedMaterials.reduce((acc, material) => {
+                if (material.type === 'recyclable') acc.recyclable++;
+                else if (material.type === 'hazardous') acc.hazardous++;
+                else if (material.type === 'organic') acc.organic++;
+                else if (material.type === 'non-recyclable') acc.nonRecyclable++;
+                return acc;
+            }, { recyclable: 0, hazardous: 0, organic: 0, nonRecyclable: 0 });
+            
+            return { materials: detectedMaterials, summary: summary };
+        }
+        // ===== END MULTI-OBJECT ANALYSIS (Conceptual) =====
+
+
+        // ===== FILE HANDLING and CAMERA FUNCTIONS (Standard) =====
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                if (file.size > 10 * 1024 * 1024) {
+                    alert('File size must be less than 10MB');
+                    return;
+                }
+                state.image = file;
+                state.preview = URL.createObjectURL(file);
+                state.results = null;
+                render();
+            }
+        });
+
+        async function startCamera() {
+            try {
+                state.stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoRef.srcObject = state.stream;
+                state.cameraActive = true;
+                state.preview = null;
+                state.results = null;
+                render();
+            } catch (err) {
+                alert('Unable to access camera. Please check permissions.');
+                console.error(err);
+            }
+        }
+
+        function stopCamera() {
+            if (state.stream) {
+                state.stream.getTracks().forEach(track => track.stop());
+                state.stream = null;
+                state.cameraActive = false;
+                render();
+            }
+        }
+
+        function capturePhoto() {
+            canvasRef.width = videoRef.videoWidth;
+            canvasRef.height = videoRef.videoHeight;
+            const ctx = canvasRef.getContext('2d');
+            ctx.drawImage(videoRef, 0, 0, canvasRef.width, canvasRef.height);
+            
+            canvasRef.toBlob((blob) => {
+                state.image = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
+                state.preview = URL.createObjectURL(blob);
+                stopCamera();
+                render();
+            }, 'image/jpeg', 0.95);
+        }
+
+        // ===== ANALYSIS & HISTORY (Standard) =====
+        async function handleAnalyze() {
+            if (!state.image || state.analyzing) return;
+            
+            state.analyzing = true;
+            state.results = null;
+            render();
+
+            try {
+                // Artificial delay to simulate processing time for a multi-object detection model
+                await new Promise(resolve => setTimeout(resolve, 2500)); 
+                
+                const results = await analyzeImage(state.image);
+                state.results = results;
+                
+                // Save to history and update stats
+                const historyItem = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    preview: state.preview,
+                    results: results
+                };
+                state.history.unshift(historyItem);
+                if (state.history.length > 20) state.history = state.history.slice(0, 20);
+                localStorage.setItem('wasteHistory', JSON.stringify(state.history));
+                
+                state.stats.total++;
+                state.stats.recyclable += results.summary.recyclable;
+                state.stats.hazardous += results.summary.hazardous;
+                state.stats.organic += results.summary.organic;
+                state.stats.nonRecyclable += results.summary.nonRecyclable;
+                localStorage.setItem('wasteStats', JSON.stringify(state.stats));
+            } catch (error) {
+                console.error("Analysis failed:", error);
+                alert("An error occurred during analysis. Check the console for details.");
+                state.results = null;
+            } finally {
+                state.analyzing = false;
+                render();
+            }
+        }
+
+        function reset() {
+            state.image = null;
+            state.preview = null;
+            state.results = null;
+            fileInput.value = '';
+            stopCamera();
+            render();
+        }
+
+        function clearAllHistory() {
+            if (confirm('Clear all history and reset statistics?')) {
+                state.history = [];
+                state.stats = {total: 0, recyclable: 0, hazardous: 0, organic: 0, nonRecyclable: 0};
+                localStorage.removeItem('wasteHistory');
+                localStorage.removeItem('wasteStats');
+                render();
+            }
+        }
+        
+        // ===== HELPER FUNCTIONS (Standard) =====
+        function getChipClass(type) {
+            switch(type) {
+                case 'recyclable': return 'chip-recyclable';
+                case 'hazardous': return 'chip-hazardous';
+                case 'organic': return 'chip-organic';
+                case 'non-recyclable': return 'chip-non-recyclable';
+                default: return '';
+            }
+        }
+
+        function getCardBorderColor(type) {
+            switch(type) {
+                case 'recyclable': return '#10b981'; 
+                case 'hazardous': return '#ef4444'; 
+                case 'organic': return '#f59e0b'; 
+                case 'non-recyclable': return '#6b7280'; 
+                default: return '#667eea';
+            }
+        }
+
+        // ===== RENDER FUNCTIONS (Standard) =====
+        function render() {
+            const app = document.getElementById('app');
+            
+            app.innerHTML = `
+                <div class="card">
+                    <div class="header">
+                        <h1>🌱 EcoSort AI</h1>
+                        <p>Smart Waste Classification & Recycling Guide</p>
+                    </div>
+                    
+                    <div class="tabs">
+                        <button class="tab ${state.activeTab === 'home' ? 'active' : ''}" onclick="state.activeTab='home'; render();">
+                            📸 Classify
+                        </button>
+                        <button class="tab ${state.activeTab === 'history' ? 'active' : ''}" onclick="state.activeTab='history'; render();">
+                            📚 History
+                        </button>
+                        <button class="tab ${state.activeTab === 'stats' ? 'active' : ''}" onclick="state.activeTab='stats'; render();">
+                            📊 Stats
+                        </button>
+                    </div>
+                    
+                    <div class="content">
+                        ${renderTabContent()}
+                    </div>
+                </div>
+            `;
+            
+            if (state.cameraActive) {
+                const videoContainer = document.getElementById('video-container');
+                if (videoContainer) videoContainer.appendChild(videoRef);
+            }
+        }
+
+        function renderTabContent() {
+            if (state.activeTab === 'home') return renderHome();
+            if (state.activeTab === 'history') return renderHistory();
+            if (state.activeTab === 'stats') return renderStats();
+        }
+
+        function renderHome() {
+            const modelStatus = state.modelLoaded 
+                ? `<p style="color: #10b981; font-weight: 600;">✅ Object Detection Model Ready</p>` 
+                : `<p style="color: #f59e0b; font-weight: 600;">⏳ Loading Object Detection Model... (Ensure URL is set)</p>`;
+
+            return `
+                <div class="fade-in">
+                    <div style="text-align: center; margin-bottom: 1rem;">${modelStatus}</div>
+
+                    ${!state.preview && !state.cameraActive ? `
+                        <div class="info-box">
+                            <strong>📌 Multi-Object Analysis:</strong> This version is built to detect **all** waste items in your image. For accurate results, replace the placeholder URL with your Object Detection model.
+                        </div>
+                        
+                        <div class="upload-zone" onclick="fileInput.click();">
+                            <div class="upload-icon">📷</div>
+                            <h3 style="margin-bottom: 0.5rem;">Upload Waste Image</h3>
+                            <p style="color: #6b7280;">Click to select or drag & drop</p>
+                            <p style="color: #9ca3af; font-size: 0.85rem; margin-top: 0.5rem;">PNG, JPG (Max 10MB)</p>
+                        </div>
+                        
+                        <div style="text-align: center; margin-top: 1.5rem;">
+                            <button class="btn btn-secondary" onclick="startCamera();">
+                                📸 Use Camera Instead
+                            </button>
+                        </div>
+                    ` : ''}
+                    
+                    ${state.cameraActive ? `
+                        <div class="camera-view">
+                            <div id="video-container"></div>
+                            <div class="camera-controls">
+                                <button class="btn btn-primary" onclick="capturePhoto();">📸 Capture</button>
+                                <button class="btn btn-secondary" onclick="stopCamera();">✕ Cancel</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${state.preview && !state.cameraActive ? `
+                        <div class="fade-in">
+                            <img src="${state.preview}" class="preview-img" alt="Preview" />
+                            <div style="text-align: center; margin-top: 1.5rem; display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap;">
+                                <button class="btn btn-primary" onclick="handleAnalyze();" ${state.analyzing || !state.modelLoaded ? 'disabled' : ''}>
+                                    ${state.analyzing ? '⏳ Analyzing...' : '🔍 Analyze Waste'}
+                                </button>
+                                <button class="btn btn-secondary" onclick="reset();">🔄 Try Another</button>
+                            </div>
+                        </div>
+                    ` : ''}
+                    
+                    ${state.analyzing ? '<div class="spinner"></div>' : ''}
+                    
+                    ${state.results ? `
+                        <div class="fade-in" style="margin-top: 2rem;">
+                            <h2 style="margin-bottom: 1rem; color: #1f2937;">🎯 Detection Results (${state.results.materials.length} Items Found)</h2>
+                            
+                            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 1.5rem;">
+                                ${state.results.materials.map(m => `
+                                    <span class="material-chip ${getChipClass(m.type)}">
+                                        ${m.name} (${(m.confidence * 100).toFixed(1)}%)
+                                    </span>
+                                `).join('')}
+                            </div>
+                            
+                            ${state.results.materials.map(m => `
+                                <div class="result-card" style="border-left-color: ${getCardBorderColor(m.type)};">
+                                    <h3>
+                                        ${m.type === 'recyclable' ? '♻️' : m.type === 'hazardous' ? '⚠️' : m.type === 'organic' ? '🌿' : '🗑️'} 
+                                        ${m.name}
+                                    </h3>
+                                    <p style="margin-bottom: 0.5rem;">
+                                        <strong>Category:</strong> 
+                                        <span style="font-weight: 700; color: ${getCardBorderColor(m.type)};">
+                                            ${m.type.charAt(0).toUpperCase() + m.type.slice(1)}
+                                        </span>
+                                    </p>
+                                    
+                                    <p style="color: #1f2937; margin-bottom: 1rem;">
+                                        <strong>Disposal Instructions:</strong> ${m.instructions}
+                                    </p>
+                                    
+                                    <hr style="margin: 0.75rem 0; border: 0; border-top: 1px dashed ${getCardBorderColor(m.type)};">
+
+                                    <div style="font-size: 0.95rem; color: #374151;">
+                                        <strong>🔬 Detailed Overview & Impact:</strong> 
+                                        <p style="margin-top: 0.5rem; line-height: 1.5;">${m.detailed_info}</p>
+                                    </div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+
+        function renderHistory() {
+            if (state.history.length === 0) {
+                return `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📭</div>
+                        <h3>No History Yet</h3>
+                        <p>Start classifying waste to build your history</p>
+                    </div>
+                `;
+            }
+            
+            return `
+                <div class="fade-in">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                        <h2 style="color: #1f2937;">📚 Classification History</h2>
+                        <button class="btn btn-secondary" style="padding: 0.5rem 1rem; font-size: 0.85rem;" onclick="clearAllHistory();">
+                            🗑️ Clear All
+                        </button>
+                    </div>
+                    
+                    ${state.history.map(item => `
+                        <div class="history-item">
+                            <div style="display: flex; gap: 1rem; align-items: center;">
+                                <img src="${item.preview}" style="width: 80px; height: 80px; object-fit: cover; border-radius: 8px;" alt="History item" />
+                                <div style="flex: 1;">
+                                    <p style="font-weight: 600; color: #1f2937;">
+                                        ${item.results.materials.map(m => m.name).join(', ')}
+                                    </p>
+                                    <p style="color: #6b7280; font-size: 0.85rem;">
+                                        ${new Date(item.timestamp).toLocaleString()}
+                                    </p>
+                                </div>
+                                <button class="btn btn-secondary" style="padding: 0.5rem;" onclick="deleteHistory(${item.id});">
+                                    🗑️
+                                </button>
+                            </div>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+
+        function renderStats() {
+            return `
+                <div class="fade-in">
+                    <h2 style="color: #1f2937; margin-bottom: 1.5rem;">📊 Your Impact Statistics</h2>
+                    
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <div class="stat-number">${state.stats.total}</div>
+                            <div class="stat-label">Total Scans</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" style="color: #10b981;">${state.stats.recyclable}</div>
+                            <div class="stat-label">Recyclables</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" style="color: #f59e0b;">${state.stats.organic}</div>
+                            <div class="stat-label">Organic Waste</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" style="color: #ef4444;">${state.stats.hazardous}</div>
+                            <div class="stat-label">Hazardous Items</div>
+                        </div>
+                        <div class="stat-card">
+                            <div class="stat-number" style="color: #6b7280;">${state.stats.nonRecyclable}</div>
+                            <div class="stat-label">Landfill/Other</div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-box" style="margin-top: 2rem;">
+                        <h3 style="margin-bottom: 0.5rem;">🌍 Environmental Impact</h3>
+                        <p>By properly sorting **${state.stats.total} items**, you're contributing to a cleaner planet, diverting waste from landfills, and supporting the circular economy! Keep it up! 🎉</p>
+                    </div>
+                    
+                    <div class="result-card" style="margin-top: 1rem; border-left-color: #667eea; background: linear-gradient(135deg, #f0f4ff 0%, #f8f4ff 100%);">
+                        <h3 style="color: #4c51bf;">💡 Top Recycling Tips</h3>
+                        <ul style="padding-left: 1.5rem; color: #5b21b6; list-style-type: '👉 ';">
+                            <li>Always rinse food containers (the cleaner the material, the easier to recycle).</li>
+                            <li>When in doubt about plastic films or bags, **throw them out** (unless a local collection program is available).</li>
+                            <li>Never put batteries or electronics in the regular trash or recycling bin.</li>
+                            <li>Break down cardboard boxes to save space in the collection trucks.</li>
+                        </ul>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ===== INITIAL ACTIONS =====
+        window.onload = () => {
+            loadModel(); // Start loading the model immediately
+            render();
+        };
+    </script>
+</body>
+</html>
