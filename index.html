@@ -106,14 +106,124 @@
         const canvasRef = document.createElement('canvas');
 
         // --- Configuration ---
-        // 🚨 CORRECTED API ENDPOINT 🚨
-        const API_URL = "https://image-filter-j730.onrender.com/classify_waste"; 
+        // CLASSIFICATION LOGIC IS NOW INTERNAL (NO API_URL NEEDED)
         
-        const GEMINI_API_KEY = ""; // Key is provided by runtime environment
+        // NOTE: If you plan to use the Gemini feature, you must still provide the GEMINI_API_KEY
+        const GEMINI_API_KEY = ""; 
         const GEMINI_API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+        
+        // --- MOCK CLASSIFICATION DATA (FROM PYTHON BACKEND) ---
+        // This large dataset ensures variety in results.
+        const WASTE_DATA = {
+            "Plastic Bottle (PET)": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Rinse thoroughly, remove the cap, and flatten before placing in the recycling bin." },
+            "Aluminum Can": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Rinse out all food residue. Aluminum can be recycled infinitely." },
+            "Cardboard Box (Clean)": { "category": "Recyclable", "bin_color": "Brown", "color": "yellow", "instructions": "Flatten the box completely. Remove all tape and place it in the brown paper/cardboard bin." },
+            "Newspaper/Magazine": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Keep dry and place loose in the recycling bin." },
+            "Glass Jar (Clear)": { "category": "Recyclable", "bin_color": "Green/Blue", "color": "green", "instructions": "Wash thoroughly. Labels can stay on. Glass can be recycled endlessly without loss of quality." },
+            "Tin Food Can": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Rinse clean. Press flat if possible." },
+            "Plastic Container (#2 HDPE)": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Rinse well and check local guidelines for #2 plastics." },
+            "Office Paper (Mixed)": { "category": "Recyclable", "bin_color": "Brown", "color": "yellow", "instructions": "Staples are fine. Do not include thermal paper or shredded paper in large amounts." },
+            "Milk Carton (Clean)": { "category": "Recyclable", "bin_color": "Blue", "color": "blue", "instructions": "Rinse and flatten. Ensure it is completely empty." },
+            "Wine Bottle (Green)": { "category": "Recyclable", "bin_color": "Green/Blue", "color": "green", "instructions": "Empty and rinse. Corks should be removed and placed in general waste." },
+            "Banana Peel/Fruit Scraps": { "category": "Organic/Compostable", "bin_color": "Green", "color": "green", "instructions": "Place directly into the compost bin or dedicated green waste bin." },
+            "Coffee Grounds/Filters": { "category": "Organic/Compostable", "bin_color": "Green", "color": "green", "instructions": "Compostable. Paper filters are usually fine with grounds." },
+            "Tea Bags": { "category": "Organic/Compostable", "bin_color": "Green", "color": "green", "instructions": "Ensure tea bag material is natural fiber (not synthetic mesh)." },
+            "Vegetable Trimmings": { "category": "Organic/Compostable", "bin_color": "Green", "color": "green", "instructions": "Ideal for composting. Add to the green waste bin." },
+            "Egg Shells": { "category": "Organic/Compostable", "bin_color": "Green", "color": "green", "instructions": "Crush them before composting for faster breakdown." },
+            "Used Batteries (AA/AAA)": { "category": "Hazardous/E-Waste", "bin_color": "Special Collection", "color": "red", "instructions": "Tape the terminals to prevent short circuits. Take to a specialized collection point." },
+            "Old Mobile Phone": { "category": "Hazardous/E-Waste", "bin_color": "E-Waste Drop-off", "color": "red", "instructions": "Wipe data, remove battery (if possible), and take to certified E-waste recycler." },
+            "LED Light Bulb": { "category": "Hazardous/E-Waste", "bin_color": "Special Collection", "color": "red", "instructions": "Contains small amounts of hazardous materials. Check local drop-off points." },
+            "Used Paint Can (Residual)": { "category": "Hazardous/Chemical", "bin_color": "Hazardous Waste Site", "color": "red", "instructions": "Must be completely dry or taken to a Household Hazardous Waste (HHW) event." },
+            "Plastic Film/Bags": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Plastic films and bags often jam recycling machinery. Dispose of in general waste." },
+            "Contaminated Pizza Box (Greasy)": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Tear off the clean parts for recycling. The greasy part goes into general waste." },
+            "Ceramics/Broken Plate": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Wrap in paper or a plastic bag before disposing to prevent injury to waste workers." },
+            "Styrofoam Food Container": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Difficult and expensive to recycle. Dispose of in general waste." },
+            "Diapers/Sanitary Waste": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Seal securely in a small bag and place in general waste." },
+            "Chip/Snack Bags (Multi-layer)": { "category": "General Waste", "bin_color": "Black/Gray", "color": "gray", "instructions": "Due to mixed material layers, these must go into general waste." },
+        };
+        const ALL_WASTE_KEYS = Object.keys(WASTE_DATA);
 
 
-        // --- Utility Functions ---
+        // --- DETERMINISTIC CLASSIFICATION LOGIC (JS REPLICATION) ---
+        
+        // Simple hash function for deterministic results based on file size
+        const hashFileSize = (file) => {
+            if (!file || !file.size) return 0;
+            // Use file size XOR bitwise operation for a quick, deterministic seed
+            return file.size ^ (file.size >> 13);
+        };
+
+        // Seeded pseudo-random number generator (PRNG)
+        const seededRandom = (seed) => {
+            const m = 2**35 - 31;
+            const a = 185852;
+            let s = seed % m;
+            return function() {
+                return (s = s * a % m) / m;
+            };
+        };
+        
+        const classify_image_js = (imageFile) => {
+            return new Promise(resolve => {
+                // Use hash of file size as the primary seed to ensure determinism
+                const seed = hashFileSize(imageFile); 
+                const rng = seededRandom(seed);
+                
+                // 1. Simulate Detected Items (Deterministic selection)
+                // Select 4 to 7 items deterministically based on the file's hash
+                const num_detections = Math.floor(rng() * 4) + 4; 
+                
+                // Shuffle keys deterministically based on seed
+                const shuffledKeys = ALL_WASTE_KEYS.slice().sort(() => rng() - 0.5);
+                
+                const detected_materials_names = shuffledKeys.slice(0, num_detections);
+
+                // 2. Build the final structured result
+                const materials_output = [];
+                const summary = {"recyclable_items": 0, "hazardous_items": 0, "general_waste_items": 0};
+                
+                for (const material_name of detected_materials_names) {
+                    const data = WASTE_DATA[material_name];
+                    
+                    // Update summary counts
+                    if (data.category === 'Recyclable') {
+                        summary.recyclable_items += 1;
+                    } else if (data.category.includes('Hazardous') || data.category.includes('E-Waste')) {
+                        summary.hazardous_items += 1;
+                    } else { // General Waste/Organic/Compostable
+                        summary.general_waste_items += 1;
+                    }
+
+                    // Generate a semi-deterministic confidence score
+                    const confidence = (0.75 + rng() * 0.2).toFixed(3); 
+
+                    materials_output.push({
+                        "detected_material": material_name,
+                        "confidence": confidence,
+                        "classification": {
+                            "category": data.category,
+                            "bin_color": data.bin_color,
+                            "color": data.color,
+                            "instructions": data.instructions,
+                        }
+                    });
+                }
+
+                const final_result = {
+                    "success": true,
+                    "message": "Classification successful (Local Mock).",
+                    "total_materials_detected": materials_output.length,
+                    "summary": summary,
+                    "materials": materials_output
+                };
+                
+                // Simulate processing delay for a better UX (1 second)
+                setTimeout(() => resolve(final_result), 1000);
+            });
+        };
+        
+        // --- End Local Classification Logic ---
+
 
         const getCategoryIcon = (category) => {
             if (category.includes('Recyclable')) return `<i class="lucide lucide-recycle w-5 h-5 text-green-600"></i>`;
@@ -281,7 +391,7 @@
                         return;
                     }
                     image = new File([blob], 'camera-capture.jpg', { type: 'image/jpeg' });
-                    preview = URL.createObjectURL(image); // Use 'image' instead of blob for consistent data handling
+                    preview = URL.createObjectURL(image); 
                     result = null;
                     stopCamera();
                     renderApp();
@@ -319,37 +429,20 @@
             error = null;
             renderApp();
 
-            const formData = new FormData();
-            formData.append("file", image);
-
+            // 🚨 CALL INTERNAL JS CLASSIFICATION FUNCTION 🚨
             try {
-                const res = await fetch(API_URL, {
-                    method: "POST",
-                    body: formData,
-                });
-                
-                if (!res.ok) {
-                    let errorBody = {};
-                    try {
-                        const contentType = res.headers.get("content-type");
-                        if (contentType && contentType.indexOf("application/json") !== -1) {
-                          errorBody = await res.json();
-                        }
-                    } catch (e) { /* ignore parse error */ }
-                    
-                    throw new Error(errorBody.message || `Server responded with status: ${res.status}. Please check backend logs.`);
-                }
-                
-                const data = await res.json();
+                const data = await classify_image_js(image);
                 result = data;
                 
                 if (result.success) {
                     updateStatsAndHistory(result, preview);
+                } else {
+                     throw new Error(result.message);
                 }
                 
             } catch (err) {
                 console.error(err);
-                error = `Classification failed: ${err.message}. Ensure your backend API is running and accessible.`;
+                error = `Classification failed: ${err.message}. (Using internal mock logic).`;
             } finally {
                 loading = false;
                 renderApp();
